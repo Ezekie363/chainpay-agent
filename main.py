@@ -28,6 +28,7 @@ WALLET_ADDR = os.environ.get("AGENT_WALLET_ADDRESS", "")
 USDC_CONTRACT = os.environ.get("USDC_BASE_SEPOLIA_ADDRESS", "0x036CbD53842c5426634e7929541eC2318f3dCF7e")
 RPC_URL = os.environ.get("BASE_SEPOLIA_RPC_URL", "https://sepolia.base.org")
 PAYMENT_PER_QUERY = 0.01
+SESSION_BUDGET_USDC = 0.50  # 单次会话最大支出上限
 
 # 会话累计
 _session_count = 0
@@ -55,7 +56,8 @@ async def _get_usdc_balance() -> float:
 async def _header():
     console.print(Panel(
         "[bold cyan]ChainQuery Agent[/bold cyan]\n"
-        "[dim]AI × Web3 · x402 Protocol · Cobo Agentic Wallet[/dim]",
+        "[dim]AI × Web3 · x402 Protocol · Cobo Agentic Wallet[/dim]\n"
+        "[yellow]⚠ Testnet only — Base Sepolia · Test USDC · Not real funds[/yellow]",
         subtitle="[dim]Hackathon Demo — Cobo Track 01[/dim]",
         border_style="cyan",
         padding=(0, 2),
@@ -121,9 +123,15 @@ async def _ask(question: str) -> AgentResult:
         if event.success and event.tx_hash:
             console.print(f"     [dim]tx[/dim] [cyan]{event.tx_hash}[/cyan]")
 
+    # 预算检查
+    remaining = SESSION_BUDGET_USDC - _session_spent
+    if remaining <= 0:
+        console.print(f"  [red]⚠ 会话预算已用完（上限 ${SESSION_BUDGET_USDC:.2f} USDC），请重启 Agent[/red]\n")
+        return AgentResult(answer="", payments=[])
+
     # spinner 提示 agent 正在思考
     with console.status("[dim]Agent thinking...[/dim]", spinner="dots"):
-        result = await run_agent(question, on_payment=on_payment)
+        result = await run_agent(question, on_payment=on_payment, max_spend=remaining)
 
     _session_count += 1
     _session_spent += result.total_spent

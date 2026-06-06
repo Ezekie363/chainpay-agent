@@ -146,6 +146,7 @@ async def _execute_tool(name: str, args: dict) -> tuple[str, PaymentEvent]:
 async def run_agent(
     user_message: str,
     on_payment: OnPaymentCallback | None = None,
+    max_spend: float = 0.50,
 ) -> AgentResult:
     """运行一轮 agent 对话，自动处理 x402 工具调用。"""
     messages = [
@@ -179,6 +180,14 @@ async def run_agent(
 
         # 顺序执行，间隔 0.5s 避免 CAW 并发签名冲突
         for i, tc in enumerate(msg.tool_calls):
+            # 预算检查：已支出 + 本次费用 > 上限则拒绝
+            spent = sum(p.amount_usdc for p in all_payments if p.success)
+            if spent + PAYMENT_AMOUNT > max_spend:
+                budget_msg = json.dumps({"error": f"会话预算已达上限（${max_spend:.2f} USDC），本次查询取消"})
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": budget_msg})
+                for remaining_tc in msg.tool_calls[i + 1:]:
+                    messages.append({"role": "tool", "tool_call_id": remaining_tc.id, "content": budget_msg})
+                break
             if i > 0:
                 await asyncio.sleep(0.5)
             args = json.loads(tc.function.arguments)
