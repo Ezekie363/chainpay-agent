@@ -146,7 +146,7 @@ async def _execute_tool(name: str, args: dict) -> tuple[str, PaymentEvent]:
 async def run_agent(
     user_message: str,
     on_payment: OnPaymentCallback | None = None,
-    max_spend: float = 0.50,
+    max_spend: float = 0.05,
 ) -> AgentResult:
     """运行一轮 agent 对话，自动处理 x402 工具调用。"""
     messages = [

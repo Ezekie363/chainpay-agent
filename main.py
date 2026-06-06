@@ -28,7 +28,7 @@ WALLET_ADDR = os.environ.get("AGENT_WALLET_ADDRESS", "")
 USDC_CONTRACT = os.environ.get("USDC_BASE_SEPOLIA_ADDRESS", "0x036CbD53842c5426634e7929541eC2318f3dCF7e")
 RPC_URL = os.environ.get("BASE_SEPOLIA_RPC_URL", "https://sepolia.base.org")
 PAYMENT_PER_QUERY = 0.01
-SESSION_BUDGET_USDC = 0.50  # 单次会话最大支出上限
+SESSION_BUDGET_USDC = 0.05  # 单次会话最大支出上限
 
 # 会话累计
 _session_count = 0
