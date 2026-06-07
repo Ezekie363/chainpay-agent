@@ -59,9 +59,9 @@ async def _get_usdc_balance() -> float:
 async def _header():
     console.print(Panel(
         "[bold cyan]ChainQuery Agent[/bold cyan]\n"
-        "[dim]AI × Web3 · x402 Protocol · Cobo Agentic Wallet[/dim]\n"
+        "AI × Web3 · [yellow]x402 Protocol[/yellow] · [cyan]Cobo Agentic Wallet[/cyan]\n"
         "[yellow]⚠ Testnet only — Base Sepolia · Test USDC · Not real funds[/yellow]",
-        subtitle="[dim]Hackathon Demo — Cobo Track 01[/dim]",
+        subtitle="[cyan]Hackathon Demo[/cyan]",
         border_style="cyan",
         padding=(0, 2),
     ))
@@ -74,8 +74,8 @@ async def _header():
     info.add_column()
     info.add_row("Agent Wallet", f"[yellow]{WALLET_ADDR}[/yellow]")
     info.add_row("Network", "[green]Base Sepolia (eip155:84532)[/green]")
-    info.add_row("USDC Balance", f"[bold white]{bal:.4f} USDC[/bold white]" if bal >= 0 else "[dim]查询失败[/dim]")
-    info.add_row("Payment", "[white]0.01 USDC per query  ·  x402 + CAW MPC[/white]")
+    info.add_row("USDC Balance", f"[bold cyan]{bal:.4f} USDC[/bold cyan]" if bal >= 0 else "[dim]查询失败[/dim]")
+    info.add_row("Payment", "0.01 USDC per query  ·  x402 + CAW MPC")
     console.print(info)
     console.print()
     return bal
@@ -100,12 +100,12 @@ def _format_result(tool: str, result: dict | None) -> str:
     if not result:
         return ""
     if tool == "query_gas_price":
-        return f"[white]{result.get('gasPrice', '')}[/white]"
+        return result.get("gasPrice", "")
     if tool == "query_token_price":
         sym = result.get("symbol", "")
         price = result.get("price_usd", "")
         change = result.get("change_24h")
-        s = f"[bold white]{sym} = ${price:,.2f}[/bold white]" if isinstance(price, (int, float)) else f"[white]{price}[/white]"
+        s = f"[bold]{sym} = ${price:,.2f}[/bold]" if isinstance(price, (int, float)) else str(price)
         if isinstance(change, (int, float)):
             color = "green" if change >= 0 else "red"
             sign = "+" if change >= 0 else ""
@@ -113,14 +113,14 @@ def _format_result(tool: str, result: dict | None) -> str:
         return s
     if tool == "query_eth_balance":
         bal = result.get("balance_eth", "")
-        return f"[bold white]{bal} ETH[/bold white]"
+        return f"[bold]{bal} ETH[/bold]"
     if tool == "query_usdc_balance":
         bal = result.get("balance_usdc", "")
-        return f"[bold white]{bal} USDC[/bold white]"
+        return f"[bold]{bal} USDC[/bold]"
     if tool == "query_defi_tvl":
         protocol = result.get("protocol", "")
         tvl = result.get("tvl_formatted", "")
-        return f"[bold white]{protocol} TVL = {tvl}[/bold white]"
+        return f"[bold]{protocol} TVL = {tvl}[/bold]"
     if tool == "query_fear_greed":
         val = result.get("value", "")
         cls = result.get("classification", "")
@@ -193,10 +193,10 @@ async def _session_summary(start_balance: float):
     if not _session_payments:
         return
     console.print(Rule("[bold]会话摘要[/bold]"))
-    tbl = Table(box=box.SIMPLE, show_header=True, header_style="bold white")
+    tbl = Table(box=box.SIMPLE, show_header=True, header_style="bold")
     tbl.add_column("#", style="dim", width=3)
-    tbl.add_column("工具", style="bold white")
-    tbl.add_column("参数", style="white")
+    tbl.add_column("工具", style="bold")
+    tbl.add_column("参数")
     tbl.add_column("耗时", justify="right", style="dim")
     tbl.add_column("费用", justify="right", style="bold cyan")
     tbl.add_column("交易哈希", style="cyan")
@@ -218,15 +218,15 @@ async def _session_summary(start_balance: float):
         end_balance = await _get_usdc_balance()
 
     info = Table.grid(padding=(0, 2))
-    info.add_column(style="white")
     info.add_column()
-    info.add_row("查询次数", f"[bold white]{len(_session_payments)}[/bold white] 次")
+    info.add_column()
+    info.add_row("查询次数", f"[bold]{len(_session_payments)}[/bold] 次")
     info.add_row("本次支付", f"[bold cyan]${_session_spent:.2f} USDC[/bold cyan]")
     if start_balance >= 0 and end_balance >= 0:
         info.add_row(
             "钱包余额",
-            f"[white]{start_balance:.4f}[/white] → [bold white]{end_balance:.4f} USDC[/bold white]"
-            f"  [dim](−{start_balance - end_balance:.4f})[/dim]",
+            f"[bold cyan]{start_balance:.4f} → {end_balance:.4f} USDC"
+            f"  (−{start_balance - end_balance:.4f})[/bold cyan]",
         )
     info.add_row("支付方式", "[bold]Cobo MPC Wallet  ·  x402 Protocol  ·  Base Sepolia[/bold]")
     console.print(info)
@@ -248,7 +248,7 @@ async def main():
 
     console.print("[dim]示例问题：[/dim]")
     for i, ex in enumerate(EXAMPLES, 1):
-        console.print(f"  [dim]{i}.[/dim] {ex}")
+        console.print(f"  {i}. {ex}")
     console.print()
     console.print("[dim]输入问题后按 Enter，输入 exit 退出[/dim]\n")
 
