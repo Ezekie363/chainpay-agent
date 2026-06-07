@@ -10,7 +10,10 @@ from typing import Callable, Awaitable
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-from .tools.chain_query import query_gas_price, query_token_price, query_eth_balance, query_usdc_balance
+from .tools.chain_query import (
+    query_gas_price, query_token_price, query_eth_balance,
+    query_usdc_balance, query_defi_tvl, query_fear_greed,
+)
 
 load_dotenv()
 
@@ -70,15 +73,39 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_defi_tvl",
+            "description": "查询指定 DeFi 协议的当前锁仓量（TVL）。支持：Uniswap、Aave、MakerDAO、Lido、Compound、Curve、GMX、Pendle 等。每次调用自动支付 0.01 USDC（x402 协议）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "protocol": {"type": "string", "description": "协议名称，如 uniswap、aave、lido"},
+                },
+                "required": ["protocol"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_fear_greed",
+            "description": "查询加密市场恐惧与贪婪指数（0-100）。0=极度恐惧，100=极度贪婪，反映当前市场整体情绪。每次调用自动支付 0.01 USDC（x402 协议）。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 PAYMENT_AMOUNT = 0.01  # USDC per query
 
 TOOL_LABELS = {
-    "query_gas_price": "Gas Price",
+    "query_gas_price":   "Gas Price",
     "query_token_price": "Token Price",
     "query_eth_balance": "ETH Balance",
-    "query_usdc_balance": "USDC Balance",
+    "query_usdc_balance":"USDC Balance",
+    "query_defi_tvl":    "DeFi TVL",
+    "query_fear_greed":  "Fear & Greed",
 }
 
 
@@ -105,6 +132,7 @@ class PaymentEvent:
 class AgentResult:
     answer: str
     payments: list[PaymentEvent] = field(default_factory=list)
+    round_messages: list[dict] = field(default_factory=list)  # 本轮新增消息，供历史管理
 
     @property
     def total_spent(self) -> float:
@@ -127,6 +155,10 @@ async def _execute_tool(name: str, args: dict) -> tuple[str, PaymentEvent]:
             data = await query_eth_balance(args["address"])
         elif name == "query_usdc_balance":
             data = await query_usdc_balance(args["address"])
+        elif name == "query_defi_tvl":
+            data = await query_defi_tvl(args["protocol"])
+        elif name == "query_fear_greed":
+            data = await query_fear_greed()
         else:
             data = {"error": f"未知工具: {name}"}
 
@@ -147,8 +179,9 @@ async def run_agent(
     user_message: str,
     on_payment: OnPaymentCallback | None = None,
     max_spend: float = 0.05,
+    history: list[dict] | None = None,
 ) -> AgentResult:
-    """运行一轮 agent 对话，自动处理 x402 工具调用。"""
+    """运行一轮 agent 对话，自动处理 x402 工具调用。history 为最近若干轮的消息列表。"""
     messages = [
         {
             "role": "system",
@@ -156,11 +189,14 @@ async def run_agent(
                 "你是 ChainQuery Agent，一个区块链数据助手。"
                 "你可以查询 Base Sepolia 上的链上数据（gas 价格、代币价格、钱包余额）。"
                 "每次查询通过 x402 协议自动从 Cobo MPC 钱包扣除 0.01 USDC。"
-                "用中文简洁地回答用户问题，在回答末尾用一行说明本次共支付多少 USDC。"
+                "如果用户的问题是对上一次查询结果的追问、概念解释或纯聊天，直接用已有知识回答，不要重新调用工具。"
+                "用中文简洁地回答用户问题。"
             ),
         },
+        *(history or []),
         {"role": "user", "content": user_message},
     ]
+    round_start = len(messages) - 1  # 本轮从 user 消息开始
 
     all_payments: list[PaymentEvent] = []
 
@@ -176,7 +212,11 @@ async def run_agent(
         messages.append(msg.model_dump(exclude_none=True))
 
         if not msg.tool_calls:
-            return AgentResult(answer=msg.content or "", payments=all_payments)
+            return AgentResult(
+                answer=msg.content or "",
+                payments=all_payments,
+                round_messages=messages[round_start:],
+            )
 
         # 顺序执行，间隔 0.5s 避免 CAW 并发签名冲突
         for i, tc in enumerate(msg.tool_calls):

@@ -5,6 +5,7 @@ ChainQuery Agent — 交互式 Demo
 """
 import asyncio
 import os
+import re
 import sys
 import httpx
 from prompt_toolkit import PromptSession
@@ -34,6 +35,8 @@ SESSION_BUDGET_USDC = 0.05  # 单次会话最大支出上限
 _session_count = 0
 _session_spent = 0.0
 _session_payments: list[PaymentEvent] = []
+_session_history: list[list[dict]] = []  # 每个元素为一轮的消息列表，最多保留 6 轮
+_HISTORY_ROUNDS = 6
 
 
 async def _get_usdc_balance() -> float:
@@ -101,18 +104,33 @@ def _format_result(tool: str, result: dict | None) -> str:
     if tool == "query_token_price":
         sym = result.get("symbol", "")
         price = result.get("price_usd", "")
-        return f"[bold white]{sym} = ${price:,.2f}[/bold white]" if isinstance(price, (int, float)) else f"[white]{price}[/white]"
+        change = result.get("change_24h")
+        s = f"[bold white]{sym} = ${price:,.2f}[/bold white]" if isinstance(price, (int, float)) else f"[white]{price}[/white]"
+        if isinstance(change, (int, float)):
+            color = "green" if change >= 0 else "red"
+            sign = "+" if change >= 0 else ""
+            s += f" [{color}]({sign}{change:.2f}%)[/{color}]"
+        return s
     if tool == "query_eth_balance":
         bal = result.get("balance_eth", "")
         return f"[bold white]{bal} ETH[/bold white]"
     if tool == "query_usdc_balance":
         bal = result.get("balance_usdc", "")
         return f"[bold white]{bal} USDC[/bold white]"
+    if tool == "query_defi_tvl":
+        protocol = result.get("protocol", "")
+        tvl = result.get("tvl_formatted", "")
+        return f"[bold white]{protocol} TVL = {tvl}[/bold white]"
+    if tool == "query_fear_greed":
+        val = result.get("value", "")
+        cls = result.get("classification", "")
+        color = "green" if isinstance(val, int) and val >= 50 else "red"
+        return f"[bold {color}]{val} — {cls}[/bold {color}]"
     return ""
 
 
 async def _ask(question: str) -> AgentResult:
-    global _session_count, _session_spent
+    global _session_count, _session_spent, _session_history
 
     console.print()
     payments_shown: list[PaymentEvent] = []
@@ -129,18 +147,29 @@ async def _ask(question: str) -> AgentResult:
         console.print(f"  [red]⚠ 会话预算已用完（上限 ${SESSION_BUDGET_USDC:.2f} USDC），请重启 Agent[/red]\n")
         return AgentResult(answer="", payments=[])
 
+    # 展平历史记录传给 agent
+    flat_history = [msg for round_msgs in _session_history for msg in round_msgs]
+
     # spinner 提示 agent 正在思考
     with console.status("[dim]Agent thinking...[/dim]", spinner="dots"):
-        result = await run_agent(question, on_payment=on_payment, max_spend=remaining)
+        result = await run_agent(question, on_payment=on_payment, max_spend=remaining, history=flat_history)
 
     _session_count += 1
     _session_spent += result.total_spent
     _session_payments.extend(result.payments)
 
-    # 打印 agent 回答
+    # 更新滑动窗口历史（最多 6 轮）
+    if result.round_messages:
+        _session_history.append(result.round_messages)
+        if len(_session_history) > _HISTORY_ROUNDS:
+            _session_history = _session_history[-_HISTORY_ROUNDS:]
+
+    # 打印 agent 回答（去掉 markdown 粗体/斜体标记）
+    clean_answer = re.sub(r'\*\*([^*]+)\*\*', r'\1', result.answer)
+    clean_answer = re.sub(r'\*([^*]+)\*', r'\1', clean_answer)
     console.print()
     console.print(Panel(
-        result.answer,
+        clean_answer,
         title="[bold green]Agent[/bold green]",
         border_style="green",
         padding=(0, 1),
@@ -151,9 +180,9 @@ async def _ask(question: str) -> AgentResult:
         paid = sum(p.amount_usdc for p in result.payments if p.success)
         calls = len([p for p in result.payments if p.success])
         console.print(
-            f"  本轮：[white]{calls} 次查询[/white]  ·  "
+            f"  本轮：[bold cyan]{calls} 次查询[/bold cyan]  ·  "
             f"支付 [bold cyan]${paid:.2f} USDC[/bold cyan]  ·  "
-            f"会话累计 [bold cyan]${_session_spent:.2f} USDC[/bold cyan]"
+            f"会话累计 [bold cyan]{_session_count} 次  ${_session_spent:.2f} USDC[/bold cyan]"
         )
 
     console.print()
@@ -209,6 +238,8 @@ EXAMPLES = [
     "查询 BTC 和 ETH 的价格，以及当前 gas 费用",
     f"帮我查询地址 {WALLET_ADDR} 的 ETH 和 USDC 余额",
     "我想知道 gas 现在贵不贵，值不值得发交易",
+    "查询 Aave 和 Uniswap 的 DeFi TVL",
+    "当前加密市场恐惧与贪婪指数是多少？",
 ]
 
 

@@ -68,3 +68,11 @@ async def query_eth_balance(address: str) -> dict:
 
 async def query_usdc_balance(address: str) -> dict:
     return await _query(f"{BASE_URL}/api/usdc-balance/{address}")
+
+
+async def query_defi_tvl(protocol: str) -> dict:
+    return await _query(f"{BASE_URL}/api/defi-tvl/{protocol}")
+
+
+async def query_fear_greed() -> dict:
+    return await _query(f"{BASE_URL}/api/fear-greed")
